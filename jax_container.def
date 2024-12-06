@@ -1,0 +1,9 @@
+BootStrap: docker
+From: nvidia/cuda:12.3.1-devel-ubuntu22.04
+
+%post
+    apt-get update && apt-get install -y python3-pip
+    pip3 install --upgrade pip
+    pip3 install "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+    pip3 install wheel tensorflow[and-cuda] tensorflow-datasets pandas
+	pip3 install jimgw flowMC lalsuite ripplegw
