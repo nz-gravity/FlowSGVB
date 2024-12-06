@@ -28,7 +28,9 @@ end_pad = post_trigger_duration
 fmin = 20.0
 fmax = 1024.0
 
-ifos = [H1] #, L1] JUST H1 for now to make faster
+ifos = [H1, L1]
+
+# TODO: dont downlaod in the future -- cache 
 
 for ifo in ifos:
     ifo.load_data(gps, start_pad, end_pad, fmin, fmax, psd_pad=16, tukey_alpha=0.2)
@@ -62,6 +64,9 @@ prior = CombinePrior(
         dec_prior,
     ]
 )
+
+
+## TODO: can we use some delta functions for some of the priors? 
 
 sample_transforms = [
     ComponentMassesToChirpMassMassRatioTransform,
@@ -104,63 +109,73 @@ local_sampler_arg = {"step_size": mass_matrix * 3e-3}
 
 Adam_optimizer = optimization_Adam(n_steps=5, learning_rate=0.01, noise_level=1)
 
-n_epochs = 2
-n_loop_training = 1
-learning_rate = 1e-4
 
 
-jim = Jim(
-    likelihood,
-    prior,
-    sample_transforms=sample_transforms,
-    likelihood_transforms=likelihood_transforms,
-    n_loop_training=n_loop_training,
-    n_loop_production=1,
-    n_local_steps=5,
-    n_global_steps=5,
-    n_chains=4,
-    n_epochs=n_epochs,
-    learning_rate=learning_rate,
-    n_max_examples=30,
-    n_flow_samples=100,
-    momentum=0.9,
-    batch_size=100,
-    use_global=True,
-    train_thinning=1,
-    output_thinning=1,
-    local_sampler_arg=local_sampler_arg,
-    strategies=[Adam_optimizer, "default"],
-)
+RUN_FAST = True
+
+if RUN_FAST:
+
+    n_epochs = 2
+    n_loop_training = 1
+    learning_rate = 1e-4
+    
+    jim = Jim(
+        likelihood,
+        prior,
+        sample_transforms=sample_transforms,
+        likelihood_transforms=likelihood_transforms,
+        n_loop_training=n_loop_training,
+        n_loop_production=1,
+        n_local_steps=5,
+        n_global_steps=5,
+        n_chains=4,
+        n_epochs=n_epochs,
+        learning_rate=learning_rate,
+        n_max_examples=30,
+        n_flow_samples=100,
+        momentum=0.9,
+        batch_size=100,
+        use_global=True,
+        train_thinning=1,
+        output_thinning=1,
+        local_sampler_arg=local_sampler_arg,
+        strategies=[Adam_optimizer, "default"],
+    )
+else:
 
 
-
-# jim = Jim(
-#     likelihood,
-#     prior,
-#     sample_transforms=sample_transforms,
-#     likelihood_transforms=likelihood_transforms,
-#     n_loop_training=n_loop_training,
-#     n_loop_production=20,
-#     n_local_steps=10,
-#     n_global_steps=1000,
-#     n_chains=500,
-#     n_epochs=n_epochs,
-#     learning_rate=learning_rate,
-#     n_max_examples=30000,
-#     n_flow_sample=100000,
-#     momentum=0.9,
-#     batch_size=30000,
-#     use_global=True,
-#     keep_quantile=0.0,
-#     train_thinning=1,
-#     output_thinning=10,
-#     local_sampler_arg=local_sampler_arg,
-#     # strategies=[Adam_optimizer,"default"],
-# )
+    n_epochs = 20
+    n_loop_training = 10
+    learning_rate = 1e-4
+    
+    jim = Jim(
+        likelihood,
+        prior,
+        sample_transforms=sample_transforms,
+        likelihood_transforms=likelihood_transforms,
+        n_loop_training=n_loop_training,
+        n_loop_production=20,
+        n_local_steps=10,
+        n_global_steps=1000,
+        n_chains=500,
+        n_epochs=n_epochs,
+        learning_rate=learning_rate,
+        n_max_examples=30000,
+        n_flow_sample=100000,
+        momentum=0.9,
+        batch_size=30000,
+        use_global=True,
+        keep_quantile=0.0,
+        train_thinning=1,
+        output_thinning=10,
+        local_sampler_arg=local_sampler_arg,
+        # strategies=[Adam_optimizer,"default"],
+    )
 
 
 jim.sample(jax.random.PRNGKey(42))
 jim.get_samples()
 jim.print_summary()
 
+# TODO: save samples to a file for posterior plotting later
 
