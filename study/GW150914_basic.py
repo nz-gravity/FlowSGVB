@@ -1,3 +1,6 @@
+import jax.numpy as jnp
+from jaxtyping import Array, Float
+from jimgw.single_event.detector import Detector
 
 def original_likelihood(
     params: dict[str, Float],

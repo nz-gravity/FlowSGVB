@@ -1,5 +1,7 @@
 # MultivarDetector
-
+import jax.numpy as jnp
+from jaxtyping import Array, Float
+from jimgw.single_event.detector import Detector
 
 def multivar_psd_likelihood(
     params: dict[str, Float],
