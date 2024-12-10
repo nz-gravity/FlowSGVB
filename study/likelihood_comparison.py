@@ -1,18 +1,12 @@
 """
 Here we compare the Likelihood of the original and the new MultivariatePSD likelihood for the same data
 """
-import jax.numpy as jnp
-from jaxtyping import Array, Float
-from GW150914_basic import original_likelihood
-from GW1509814_multivarpsd import multivar_psd_likelihood
 
 
 # parameter = [1,0,0,0]
 # data = loda_data()
 # assert Likelihood(data, parameter) == MultiavarPSDLikelihood(data, parameter)   
 
-
-"""
 
 
 import jax
@@ -44,12 +38,12 @@ fmin = 20.0
 fmax = 1024.0
 
 
-# ifos = [H1, L1]
+ifos = [H1, L1]
 
 # # TODO: dont downlaod in the future -- cache 
 
-# for ifo in ifos:
-#     ifo.load_data(gps, start_pad, end_pad, fmin, fmax, psd_pad=16, tukey_alpha=0.2)
+for ifo in ifos:
+     ifo.load_data(gps, start_pad, end_pad, fmin, fmax, psd_pad=16, tukey_alpha=0.2)
 
 M_c_min, M_c_max = 10.0, 80.0
 q_min, q_max = 0.125, 1.0
@@ -119,6 +113,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float
 from jimgw.single_event.detector import Detector
 from jimgw.single_event.likelihood import TransientLikelihoodFD
+import matplotlib.pyplot as plt
 
 def original_likelihood(
     params: dict[str, Float],
@@ -180,6 +175,7 @@ def multivar_psd_likelihood(
     '''
     Compute the log-likelihood
     '''
+    data_matrix = jnp.stack([detector.data for detector in detectors], axis=1)
     log_likelihood = 0.0
     df = freqs[1] - freqs[0]
     for i in range(len(freqs)):
@@ -192,8 +188,10 @@ def multivar_psd_likelihood(
             residual_vector.conj().T @ inv_psd_matrix @ residual_vector
         ).real
     
-    
-        log_likelihood += -0.5 * likelihood_contribution 
+        energy_term = -0.5 * data_matrix[i, :].conj().T @inv_psd_matrix @data_matrix[i, :] 
+        
+        
+        log_likelihood += -0.5 * likelihood_contribution - energy_term
    
     return log_likelihood   
 
@@ -240,18 +238,17 @@ new_lnls = []
 
 Mcs = np.linspace(15, 35, 10)
 for mc in tqdm(Mcs):
-  new_theta = {**params, "gmst":gmst}
+  new_theta = {**params}
   new_theta['M_c'] = mc
+  freq = Mcs
   h_sky = RippleIMRPhenomD()(frequency=freq, params=new_theta)
   # lnls.append(original_likelihood(new_theta, h_sky, ifos, freq, 0))
-  lnls.append(basic_lnl.evaluate(new_theta, ifos))
+  #lnls.append(basic_lnl.evaluate(new_theta, ifos))
   new_lnls.append(new_lnl.evaluate(new_theta, ifos))
 
 
+#plt.plot(Mcs, lnls)
 
-
-plt.plot(Mcs, lnls)
-plt.show()
 plt.plot(Mcs, new_lnls)
+plt.show()
 
-"""

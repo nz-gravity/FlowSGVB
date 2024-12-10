@@ -40,6 +40,7 @@ def multivar_psd_likelihood(
     '''
     Compute the log-likelihood
     '''
+    data_matrix = jnp.stack([detector.data for detector in detectors], axis=1)
     log_likelihood = 0.0
     df = freqs[1] - freqs[0]
     for i in range(len(freqs)):
@@ -52,10 +53,12 @@ def multivar_psd_likelihood(
             residual_vector.conj().T @ inv_psd_matrix @ residual_vector
         ).real
     
-    
-        log_likelihood += -0.5 * likelihood_contribution * df
+        energy_term = -0.5 * data_matrix[i, :].conj().T @inv_psd_matrix @data_matrix[i, :] 
+        
+        
+        log_likelihood += -0.5 * likelihood_contribution - energy_term
    
-    return log_likelihood   
+    return log_likelihood     
 
 
 
