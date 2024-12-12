@@ -137,6 +137,19 @@ def original_likelihood(
 
 
 
+class multivariate_psd:
+     def __init__(self, detectors: list[Detector], diagonal_psd: bool = True):
+         
+         if diagonal_psd:
+            psd_values = jnp.stack([detector.psd for detector in detectors], axis=1)
+            self.psd_matrix = jax.vmap(jnp.diag)(psd_values)
+
+         else:
+            self.psd_matrix = 0 # noise psd matrices estimated by SGVB
+
+         self.inv_psd_matrix = jnp.linalg.inv(self.psd_matrix) 
+         
+
 
 def multivar_psd_likelihood(
     params: dict[str, Float],
@@ -144,66 +157,47 @@ def multivar_psd_likelihood(
     detectors: list[Detector],
     freqs: Float[Array, " n_dim"],
     align_time: Float,
+    inverse_psd: multivariate_psd,
     **kwargs,
 ) -> Float:
     
-    '''
-    PSD matrix construction for all detectors
-    '''
-    psd_matrices = []
-    for i in range(len(freqs)):
-        
-        # For each frequency, construct a diagonal PSD matrix
-        diag_psd = [detector.psd[i] for detector in detectors]
-        psd_matrix = jnp.diag(jnp.array(diag_psd))
-        psd_matrices.append(psd_matrix)
-    
-    '''
-    residual matrix for all detectors
-    '''
-    residuals = []
-    # Iterate through each detector
-    for detector in detectors:
-        h_dec = detector.fd_response(freqs, h_sky, params) * align_time
-        # Subtract h_dec from the detector's data
-        residual = detector.data - h_dec
-        residuals.append(residual)
-    
-    # Concatenate all detector residuals into a single vector
-    residual_matrix = jnp.stack(residuals, axis=1)   # Shape: (n_freqs, n_detectors)
-    
-    '''
-    Compute the log-likelihood
-    '''
     data_matrix = jnp.stack([detector.data for detector in detectors], axis=1)
-    log_likelihood = 0.0
-    df = freqs[1] - freqs[0]
-    for i in range(len(freqs)):
-
-        psd_matrix = psd_matrices[i]
-        inv_psd_matrix = jnp.linalg.inv(psd_matrix)
+    h_dec_matrix = jnp.stack(
+        [detector.fd_response(freqs, h_sky, params) * align_time for detector in detectors],
+        axis=1
+    ) 
     
-        residual_vector = residual_matrix[i, :]
-        likelihood_contribution = (
-            residual_vector.conj().T @ inv_psd_matrix @ residual_vector
-        ).real
+    residual_matrix = data_matrix - h_dec_matrix
     
-        energy_term = -0.5 * data_matrix[i, :].conj().T @inv_psd_matrix @data_matrix[i, :] 
-        
-        
-        log_likelihood += -0.5 * likelihood_contribution - energy_term
-   
-    return log_likelihood   
-
-
+    inv_psd_matrices = inverse_psd.inv_psd_matrix
+    likelihood_contributions = jax.vmap(
+        lambda res, inv_psd: (res.conj().T @ inv_psd @ res).real
+    )(residual_matrix, inv_psd_matrices)
+    
+    energy_terms = jax.vmap(
+        lambda data, inv_psd: -0.5 * (data.conj().T @ inv_psd @ data).real
+    )(data_matrix, inv_psd_matrices)
+    
+    log_likelihood = -0.5 * jnp.sum(likelihood_contributions) - jnp.sum(energy_terms)
+    
+    return log_likelihood
+    
 
 
 
 
 class MultivariatePSDTransientLikelihoodFD(TransientLikelihoodFD):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, diagonal_psd=True, **kwargs):
         super().__init__(*args, **kwargs)
-        self.likelihood_function = multivar_psd_likelihood
+        
+        self.multivariate_psd = multivariate_psd(
+            detectors=self.detectors,
+            diagonal_psd=diagonal_psd
+        )
+
+        self.likelihood_function = lambda *args, **kwargs: multivar_psd_likelihood(
+            *args, inverse_psd=self.multivariate_psd, **kwargs
+        )
 
 
 
@@ -227,6 +221,7 @@ new_lnl = MultivariatePSDTransientLikelihoodFD(
     post_trigger_duration=2,
     sample_transforms=sample_transforms,
     likelihood_transforms=likelihood_transforms,
+    diagonal_psd=True
 )
 
 
@@ -243,12 +238,22 @@ for mc in tqdm(Mcs):
   freq = Mcs
   h_sky = RippleIMRPhenomD()(frequency=freq, params=new_theta)
   # lnls.append(original_likelihood(new_theta, h_sky, ifos, freq, 0))
-  #lnls.append(basic_lnl.evaluate(new_theta, ifos))
+  lnls.append(basic_lnl.evaluate(new_theta, ifos))
   new_lnls.append(new_lnl.evaluate(new_theta, ifos))
 
 
-#plt.plot(Mcs, lnls)
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-plt.plot(Mcs, new_lnls)
+axes[0].plot(Mcs, lnls)
+axes[0].set_title('Original Likelihood')
+axes[0].set_xlabel('M_c')
+axes[0].set_ylabel('Likelihood')
+
+axes[1].plot(Mcs, new_lnls)
+axes[1].set_title('Multivariate Likelihood')
+axes[1].set_xlabel('M_c')
+axes[1].set_ylabel('Likelihood')
+
+plt.tight_layout()
 plt.show()
-
+#plt.savefig("likelihood_comparison.pdf", format="pdf")
