@@ -1,12 +1,3 @@
-"""
-Here we compare the Likelihood of the original and the new MultivariatePSD likelihood for the same data
-"""
-
-
-# parameter = [1,0,0,0]
-# data = loda_data()
-# assert Likelihood(data, parameter) == MultiavarPSDLikelihood(data, parameter)   
-
 
 
 import jax
@@ -37,13 +28,12 @@ end_pad = post_trigger_duration
 fmin = 20.0
 fmax = 1024.0
 
-
 ifos = [H1, L1]
 
-# # TODO: dont downlaod in the future -- cache 
+# TODO: dont downlaod in the future -- cache 
 
 for ifo in ifos:
-     ifo.load_data(gps, start_pad, end_pad, fmin, fmax, psd_pad=16, tukey_alpha=0.2)
+    ifo.load_data(gps, start_pad, end_pad, fmin, fmax, psd_pad=16, tukey_alpha=0.2)
 
 M_c_min, M_c_max = 10.0, 80.0
 q_min, q_max = 0.125, 1.0
@@ -99,39 +89,9 @@ likelihood_transforms = [
 ]
 
 
-### JIANAN's TEST BELOW
-
-
-
-import jax.numpy as jnp
 from jaxtyping import Array, Float
 from jimgw.single_event.detector import Detector
-import numpy as np
-from astropy.time import Time
-from tqdm.auto import tqdm
 from jimgw.single_event.likelihood import TransientLikelihoodFD
-import matplotlib.pyplot as plt
-
-def original_likelihood(
-    params: dict[str, Float],
-    h_sky: dict[str, Float[Array, " n_dim"]],
-    detectors: list[Detector],
-    freqs: Float[Array, " n_dim"],
-    align_time: Float,
-    **kwargs,
-) -> Float:
-    log_likelihood = 0.0
-    df = freqs[1] - freqs[0]
-    for detector in detectors:
-        h_dec = detector.fd_response(freqs, h_sky, params) * align_time
-        match_filter_SNR = (
-            4 * jnp.sum((jnp.conj(h_dec) * detector.data) / detector.psd * df).real
-        )
-        optimal_SNR = 4 * jnp.sum(jnp.conj(h_dec) * h_dec / detector.psd * df).real
-        log_likelihood += match_filter_SNR - optimal_SNR / 2
-
-    return log_likelihood
-
 
 
 class multivariate_psd:
@@ -198,19 +158,14 @@ class MultivariatePSDTransientLikelihoodFD(TransientLikelihoodFD):
 
 
 
-basic_lnl = TransientLikelihoodFD(
-    detectors=ifos,
-    prior=prior,
-    waveform=RippleIMRPhenomD(),
-    trigger_time=gps,
-    duration=4,
-    post_trigger_duration=2,
-    sample_transforms=sample_transforms,
-    likelihood_transforms=likelihood_transforms,
-)
 
-new_lnl = MultivariatePSDTransientLikelihoodFD(
-    detectors=ifos,
+
+
+
+
+
+likelihood = MultivariatePSDTransientLikelihoodFD(
+    ifos,
     prior=prior,
     waveform=RippleIMRPhenomD(),
     trigger_time=gps,
@@ -218,39 +173,86 @@ new_lnl = MultivariatePSDTransientLikelihoodFD(
     post_trigger_duration=2,
     sample_transforms=sample_transforms,
     likelihood_transforms=likelihood_transforms,
+    n_steps=5,
+    popsize=10,
     diagonal_psd=True
 )
 
 
+mass_matrix = jnp.eye(11)
+mass_matrix = mass_matrix.at[1, 1].set(1e-3)
+mass_matrix = mass_matrix.at[5, 5].set(1e-3)
+local_sampler_arg = {"step_size": mass_matrix * 3e-3}
 
-params =  {'ra': 3.0501547234835615, 'dec': 0.25627591999554844, 'psi': 0.31829725279217863, 'iota': 0.6587444630143763, 'phase_c': 4.0457167805377505, 't_c': 0.03135253197548338, 'd_L': 1305.0286912380118, 's2_z': -0.5964997353135959, 's1_z': 0.8158665162274288, 'M_c': 25.24749708900822, 'eta': 0.24949611706329067}
-
-lnls = []
-new_lnls = []
-
-Mcs = np.linspace(15, 35, 10)
-for mc in tqdm(Mcs):
-  new_theta = {**params}
-  new_theta['M_c'] = mc
-  freq = Mcs
-  h_sky = RippleIMRPhenomD()(frequency=freq, params=new_theta)
-  # lnls.append(original_likelihood(new_theta, h_sky, ifos, freq, 0))
-  lnls.append(basic_lnl.evaluate(new_theta, ifos))
-  new_lnls.append(new_lnl.evaluate(new_theta, ifos))
+Adam_optimizer = optimization_Adam(n_steps=5, learning_rate=0.01, noise_level=1)
 
 
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-axes[0].plot(Mcs, lnls)
-axes[0].set_title('Original Likelihood')
-axes[0].set_xlabel('M_c')
-axes[0].set_ylabel('Likelihood')
+RUN_FAST = True
 
-axes[1].plot(Mcs, new_lnls)
-axes[1].set_title('Multivariate Likelihood')
-axes[1].set_xlabel('M_c')
-axes[1].set_ylabel('Likelihood')
+if RUN_FAST:
 
-plt.tight_layout()
-plt.show()
-#plt.savefig("likelihood_comparison.pdf", format="pdf")
+    n_epochs = 2
+    n_loop_training = 1
+    learning_rate = 1e-4
+    
+    jim = Jim(
+        likelihood,
+        prior,
+        sample_transforms=sample_transforms,
+        likelihood_transforms=likelihood_transforms,
+        n_loop_training=n_loop_training,
+        n_loop_production=1,
+        n_local_steps=5,
+        n_global_steps=5,
+        n_chains=4,
+        n_epochs=n_epochs,
+        learning_rate=learning_rate,
+        n_max_examples=30,
+        n_flow_samples=100,
+        momentum=0.9,
+        batch_size=100,
+        use_global=True,
+        train_thinning=1,
+        output_thinning=1,
+        local_sampler_arg=local_sampler_arg,
+        strategies=[Adam_optimizer, "default"],
+    )
+else:
+
+
+    n_epochs = 20
+    n_loop_training = 10
+    learning_rate = 1e-4
+    
+    jim = Jim(
+        likelihood,
+        prior,
+        sample_transforms=sample_transforms,
+        likelihood_transforms=likelihood_transforms,
+        n_loop_training=n_loop_training,
+        n_loop_production=20,
+        n_local_steps=10,
+        n_global_steps=1000,
+        n_chains=500,
+        n_epochs=n_epochs,
+        learning_rate=learning_rate,
+        n_max_examples=30000,
+        n_flow_sample=100000,
+        momentum=0.9,
+        batch_size=30000,
+        use_global=True,
+        keep_quantile=0.0,
+        train_thinning=1,
+        output_thinning=10,
+        local_sampler_arg=local_sampler_arg,
+        # strategies=[Adam_optimizer,"default"],
+    )
+
+
+jim.sample(jax.random.PRNGKey(42))
+jim.get_samples()
+jim.print_summary()
+
+# TODO: save samples to a file for posterior plotting later
+
