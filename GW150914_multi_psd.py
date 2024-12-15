@@ -1,4 +1,4 @@
-
+'Based on the sample dome, run the JIM given multivariate psd and save the results'
 import jax
 import jax.numpy as jnp
 import numpy as np
