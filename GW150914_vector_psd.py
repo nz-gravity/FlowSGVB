@@ -28,6 +28,9 @@ from jimgw.single_event.transforms import (
 from jimgw.single_event.utils import Mc_q_to_m1_m2
 from flowMC.strategy.optimization import optimization_Adam
 
+import time
+start_time = time.time()
+
 jax.config.update("jax_enable_x64", True)
 
 ###########################################
@@ -173,6 +176,9 @@ samples = jim.get_samples()
 parameter = np.column_stack([v for v in samples.values()])
 labels = list(samples.keys())
 
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"Time for vector_psd case is: {elapsed_time:.6f} s")
 
 with h5py.File("GW150914_vector_psd.h5", "w") as hf:
     hf.create_dataset("parameter", data=parameter)

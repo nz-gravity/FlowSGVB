@@ -24,6 +24,9 @@ from jimgw.single_event.transforms import (
 #from jimgw.single_event.utils import Mc_q_to_m1_m2
 from flowMC.strategy.optimization import optimization_Adam
 
+import time
+start_time = time.time()
+
 jax.config.update("jax_enable_x64", True)
 
 ###########################################
@@ -179,16 +182,11 @@ class MultivariatePSDTransientLikelihoodFD(TransientLikelihoodFD):
 
 
 likelihood = MultivariatePSDTransientLikelihoodFD(
-    ifos,
-    prior=prior,
-    waveform=RippleIMRPhenomD(),
+    [H1, L1],
+    waveform=waveform,
     trigger_time=gps,
     duration=4,
     post_trigger_duration=2,
-    sample_transforms=sample_transforms,
-    likelihood_transforms=likelihood_transforms,
-    n_steps=5,
-    popsize=10,
     diagonal_psd=True
 )
 
@@ -242,7 +240,11 @@ samples = jim.get_samples()
 parameter = np.column_stack([v for v in samples.values()])
 labels = list(samples.keys())
 
-with h5py.File("GW150914samples2.h5", "w") as hf:
+end_time = time.time()
+elapsed_time = end_time - start_time
+print(f"Time for multi_psd case is: {elapsed_time:.6f} s")
+
+with h5py.File("GW150914_multi_psd.h5", "w") as hf:
     hf.create_dataset("parameter", data=parameter)
     hf.create_dataset("labels", data=np.string_(labels))
 
